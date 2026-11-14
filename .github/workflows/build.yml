@@ -22,6 +22,9 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept Android SDK Licenses
+        run: yes | sdkmanager --licenses
+
       - name: Install Android SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
@@ -38,3 +41,4 @@ jobs:
         with:
           name: Aethornex-Location-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+
