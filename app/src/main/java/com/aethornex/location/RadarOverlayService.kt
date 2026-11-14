@@ -5,127 +5,321 @@ import android.content.Intent
 import android.graphics.*
 import android.os.IBinder
 import android.view.*
-import android.widget.FrameLayout
-import kotlin.math.*
+import kotlin.math.abs
 
 class RadarOverlayService : Service() {
+
     private var windowManager: WindowManager? = null
-    private var overlay: View? = null
+    private var overlay: VisionPanel? = null
+    private var params: WindowManager.LayoutParams? = null
+
+    private var minimized = false
+    private var aiEnabled = false
+    private var boxesEnabled = true
+    private var linesEnabled = true
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    private fun dp(v: Int) =
+        (v * resources.displayMetrics.density).toInt()
+
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int
+    ): Int {
+
         if (overlay != null) return START_STICKY
+
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        val view = RadarView()
-        overlay = view
+
         val type = if (android.os.Build.VERSION.SDK_INT >= 26)
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+        else @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
 
-        val params = WindowManager.LayoutParams(
-            dp(230), dp(250), type,
+        params = WindowManager.LayoutParams(
+            dp(300),
+            dp(310),
+            type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            x = dp(12); y = dp(120)
+            x = dp(12)
+            y = dp(120)
         }
-        windowManager?.addView(view, params)
+
+        overlay = VisionPanel()
+        windowManager?.addView(overlay, params)
+
         return START_STICKY
     }
 
+    private fun resizePanel() {
+        val p = params ?: return
+        val v = overlay ?: return
+
+        p.width = dp(if (minimized) 64 else 300)
+        p.height = dp(if (minimized) 64 else 310)
+
+        windowManager?.updateViewLayout(v, p)
+        v.invalidate()
+    }
+
     override fun onDestroy() {
-        overlay?.let { windowManager?.removeView(it) }
+        overlay?.let {
+            try {
+                windowManager?.removeView(it)
+            } catch (_: Exception) {}
+        }
         overlay = null
+        params = null
         super.onDestroy()
     }
 
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    private inner class VisionPanel :
+        View(this@RadarOverlayService) {
 
-    private inner class RadarView : View(this@RadarOverlayService) {
-        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
         private var downX = 0f
         private var downY = 0f
         private var startX = 0
         private var startY = 0
-        private val targets = listOf(
-            PointF(0.55f, -0.42f), PointF(-0.62f, -0.18f), PointF(0.18f, 0.72f)
-        )
+        private var moved = false
+
+        private val cyan = Color.rgb(0, 225, 255)
+        private val green = Color.rgb(45, 245, 125)
+        private val background = Color.rgb(5, 17, 29)
+
+        private fun text(
+            c: Canvas,
+            value: String,
+            x: Float,
+            y: Float,
+            size: Float,
+            color: Int,
+            bold: Boolean = false
+        ) {
+            paint.color = color
+            paint.textSize = dp(size).toFloat()
+            paint.typeface = Typeface.create(
+                "sans-serif",
+                if (bold) Typeface.BOLD else Typeface.NORMAL
+            )
+            paint.style = Paint.Style.FILL
+            c.drawText(value, x, y, paint)
+        }
+
+        private fun panel(
+            c: Canvas,
+            l: Float,
+            t: Float,
+            r: Float,
+            b: Float,
+            color: Int,
+            radius: Float = 12f
+        ) {
+            paint.color = color
+            paint.style = Paint.Style.FILL
+            c.drawRoundRect(
+                l, t, r, b,
+                dp(radius).toFloat(),
+                dp(radius).toFloat(),
+                paint
+            )
+        }
+
+        private fun toggle(
+            c: Canvas,
+            x: Float,
+            y: Float,
+            enabled: Boolean
+        ) {
+            val w = dp(43).toFloat()
+            val h = dp(23).toFloat()
+
+            panel(
+                c, x, y, x + w, y + h,
+                if (enabled) green else Color.DKGRAY,
+                15f
+            )
+
+            paint.color = Color.WHITE
+            paint.style = Paint.Style.FILL
+
+            val cx = if (enabled) x + w - dp(12) else x + dp(12)
+            c.drawCircle(
+                cx,
+                y + h / 2f,
+                dp(8).toFloat(),
+                paint
+            )
+        }
 
         override fun onDraw(c: Canvas) {
             super.onDraw(c)
-            val w = width.toFloat()
-            val h = height.toFloat()
-            p.color = Color.argb(220, 7, 13, 24)
-            p.style = Paint.Style.FILL
-            c.drawRoundRect(0f, 0f, w, h, 22f, 22f, p)
 
-            p.color = Color.rgb(57, 230, 165)
-            p.textSize = 13f
-            p.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-            c.drawText("AETHORNEX  •  DEMO", 14f, 23f, p)
+            if (minimized) {
+                paint.color = Color.rgb(4, 25, 40)
+                paint.style = Paint.Style.FILL
+                c.drawCircle(
+                    width / 2f,
+                    height / 2f,
+                    dp(29).toFloat(),
+                    paint
+                )
 
-            val cx = w / 2f
-            val cy = h * 0.57f
-            val r = min(w * 0.39f, h * 0.34f)
-            p.style = Paint.Style.STROKE
-            p.strokeWidth = 1.5f
-            p.color = Color.argb(190, 57, 230, 165)
-            c.drawCircle(cx, cy, r, p)
-            c.drawCircle(cx, cy, r * .66f, p)
-            c.drawCircle(cx, cy, r * .33f, p)
-            c.drawLine(cx-r, cy, cx+r, cy, p)
-            c.drawLine(cx, cy-r, cx, cy+r, p)
+                paint.color = cyan
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = dp(2).toFloat()
+                c.drawCircle(
+                    width / 2f,
+                    height / 2f,
+                    dp(29).toFloat(),
+                    paint
+                )
 
-            p.style = Paint.Style.STROKE
-            p.strokeWidth = 2f
-            p.color = Color.rgb(57, 230, 165)
-            c.drawCircle(cx, cy, 5f, p)
-            p.style = Paint.Style.FILL
-            c.drawCircle(cx, cy, 3f, p)
-
-            targets.forEachIndexed { index, pt ->
-                val tx = cx + pt.x * r
-                val ty = cy + pt.y * r
-                p.color = Color.argb(180, 255, 70, 80)
-                p.strokeWidth = 1.5f
-                p.style = Paint.Style.STROKE
-                c.drawLine(cx, cy, tx, ty, p)
-                p.style = Paint.Style.FILL
-                c.drawCircle(tx, ty, 5f, p)
-                p.color = Color.rgb(255, 115, 120)
-                p.textSize = 9f
-                c.drawText("SIM ${index+1}", tx + 7f, ty - 5f, p)
+                text(
+                    c, "A",
+                    dp(18).toFloat(),
+                    dp(43).toFloat(),
+                    28f, cyan, true
+                )
+                return
             }
-            p.color = Color.LTGRAY
-            p.textSize = 10f
-            c.drawText("DRAG TO MOVE  •  X TO CLOSE", 14f, h - 12f, p)
-            p.color = Color.rgb(255, 90, 90)
-            p.textSize = 18f
-            c.drawText("×", w - 23f, 23f, p)
+
+            val w = width.toFloat()
+
+            panel(c, 0f, 0f, w, height.toFloat(), background, 18f)
+
+            paint.color = cyan
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dp(1).toFloat()
+            c.drawRoundRect(
+                1f, 1f,
+                w - 1f, height - 1f,
+                dp(18).toFloat(),
+                dp(18).toFloat(),
+                paint
+            )
+
+            text(c, "A", dp(14).toFloat(), dp(34).toFloat(), 25f, cyan, true)
+            text(c, "AETHORNEX", dp(48).toFloat(), dp(26).toFloat(), 16f, Color.WHITE, true)
+            text(c, "VISION", dp(48).toFloat(), dp(43).toFloat(), 10f, cyan, true)
+
+            text(c, "—", w - dp(62).toFloat(), dp(27).toFloat(), 21f, Color.WHITE, true)
+            text(c, "×", w - dp(29).toFloat(), dp(28).toFloat(), 20f, Color.RED, true)
+
+            panel(
+                c, dp(12).toFloat(), dp(57).toFloat(),
+                w - dp(12), dp(91).toFloat(),
+                Color.rgb(9, 38, 48), 8f
+            )
+
+            text(c, "●", dp(21).toFloat(), dp(79).toFloat(), 11f,
+                if (aiEnabled) green else Color.GRAY)
+
+            text(
+                c,
+                if (aiEnabled) "AI CONTROL: ON" else "AI CONTROL: OFF",
+                dp(38).toFloat(), dp(80).toFloat(),
+                12f, Color.WHITE, true
+            )
+
+            text(c, "MODEL: NOT CONNECTED", dp(18).toFloat(),
+                dp(107).toFloat(), 10f, Color.YELLOW, true)
+
+            text(c, "VISIBLE PLAYER DETECTION", dp(15).toFloat(),
+                dp(140).toFloat(), 11f, Color.WHITE, true)
+            toggle(c, w - dp(59), dp(122).toFloat(), aiEnabled)
+
+            text(c, "DETECTION BOXES", dp(15).toFloat(),
+                dp(185).toFloat(), 12f, Color.WHITE)
+            toggle(c, w - dp(59), dp(167).toFloat(), boxesEnabled)
+
+            text(c, "ANTENNA LINES", dp(15).toFloat(),
+                dp(230).toFloat(), 12f, Color.WHITE)
+            toggle(c, w - dp(59), dp(212).toFloat(), linesEnabled)
+
+            panel(
+                c, dp(12).toFloat(), dp(249).toFloat(),
+                w - dp(12), dp(278).toFloat(),
+                Color.rgb(13, 34, 48), 7f
+            )
+
+            text(c, "LIVE CAPTURE SERVICE", dp(19).toFloat(),
+                dp(268).toFloat(), 10f, cyan, true)
+
+            text(c, "DRAG HEADER  •  TAP — TO MINIMIZE",
+                dp(14).toFloat(), dp(297).toFloat(),
+                8f, Color.LTGRAY)
         }
 
-        override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
-            val params = layoutParams as? WindowManager.LayoutParams ?: return true
+        override fun onTouchEvent(e: MotionEvent): Boolean {
+            val p = params ?: return true
+
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    downX = e.rawX; downY = e.rawY
-                    startX = params.x; startY = params.y
+                    downX = e.rawX
+                    downY = e.rawY
+                    startX = p.x
+                    startY = p.y
+                    moved = false
                     return true
                 }
+
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = startX - (e.rawX - downX).toInt()
-                    params.y = startY + (e.rawY - downY).toInt()
-                    windowManager?.updateViewLayout(this, params)
+                    val dx = e.rawX - downX
+                    val dy = e.rawY - downY
+
+                    if (minimized || downY <= dp(55)) {
+                        if (abs(dx) > dp(4) || abs(dy) > dp(4))
+                            moved = true
+
+                        if (moved) {
+                            p.x = startX - dx.toInt()
+                            p.y = startY + dy.toInt()
+                            windowManager?.updateViewLayout(this, p)
+                        }
+                    }
                     return true
                 }
+
                 MotionEvent.ACTION_UP -> {
-                    if (e.x > width - dp(42) && e.y < dp(42)) stopSelf()
+                    if (moved) return true
+
+                    if (minimized) {
+                        minimized = false
+                        resizePanel()
+                        return true
+                    }
+
+                    val x = e.x
+                    val y = e.y
+
+                    if (y < dp(48) && x > width - dp(78)) {
+                        if (x > width - dp(43)) {
+                            stopSelf()
+                        } else {
+                            minimized = true
+                            resizePanel()
+                        }
+                    } else if (y in dp(115).toFloat()..dp(155).toFloat()) {
+                        aiEnabled = !aiEnabled
+                    } else if (y in dp(160).toFloat()..dp(200).toFloat()) {
+                        boxesEnabled = !boxesEnabled
+                    } else if (y in dp(205).toFloat()..dp(245).toFloat()) {
+                        linesEnabled = !linesEnabled
+                    }
+
+                    invalidate()
                     return true
                 }
             }
+
             return true
         }
     }
