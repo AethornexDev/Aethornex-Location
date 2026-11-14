@@ -4,7 +4,7 @@ plugins {
 }
 
 dependencies {
-    implementation("com.google.mediapipe:tasks-vision:latest.release")
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
 }
 
 android {
