@@ -104,7 +104,7 @@ class RadarOverlayService : Service() {
             bold: Boolean = false
         ) {
             paint.color = color
-            paint.textSize = dp(size).toFloat()
+            paint.textSize = size * resources.displayMetrics.density
             paint.typeface = Typeface.create(
                 "sans-serif",
                 if (bold) Typeface.BOLD else Typeface.NORMAL
@@ -126,8 +126,8 @@ class RadarOverlayService : Service() {
             paint.style = Paint.Style.FILL
             c.drawRoundRect(
                 l, t, r, b,
-                dp(radius).toFloat(),
-                dp(radius).toFloat(),
+                dp(radius.toInt()).toFloat(),
+                dp(radius.toInt()).toFloat(),
                 paint
             )
         }
