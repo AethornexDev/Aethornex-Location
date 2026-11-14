@@ -3,6 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+dependencies {
+    implementation("com.google.mediapipe:tasks-vision:latest.release")
+}
+
 android {
     namespace = "com.aethornex.location"
     compileSdk = 36
